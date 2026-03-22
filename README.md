@@ -96,7 +96,19 @@ Run the full suite with:
 make test
 ```
 
-GitHub Actions also runs `swift build -c release` and `swift test` on every push and pull request.
+Format the code with:
+
+```bash
+make format
+```
+
+Check formatting in CI-style strict mode with:
+
+```bash
+make lint
+```
+
+GitHub Actions also runs `swift format lint -r --strict`, `swift build -c release`, and `swift test` on every push and pull request.
 
 ## Roadmap
 
@@ -104,3 +116,4 @@ GitHub Actions also runs `swift build -c release` and `swift test` on every push
 - More daemon lifecycle integration tests
 - LaunchAgent packaging for native background startup
 - Trim debug-oriented telemetry once the bridge settles
+- Consider adding SwiftLint for broader style and policy checks later

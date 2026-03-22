@@ -5,7 +5,7 @@ BUILD_DIR ?= .build/release
 TARGET ?= soundway
 INSTALL ?= install
 
-.PHONY: build test release run devices status install uninstall clean
+.PHONY: build test release run devices status format lint install uninstall clean
 
 build:
 	$(SWIFT) build
@@ -15,6 +15,12 @@ test:
 
 release:
 	$(SWIFT) build -c release
+
+format:
+	$(SWIFT) format format -i -r Sources Tests
+
+lint:
+	$(SWIFT) format lint -r --strict Sources Tests
 
 run:
 	$(SWIFT) run $(TARGET)

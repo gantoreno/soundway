@@ -20,6 +20,9 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
+      - name: Check formatting
+        run: swift format lint -r --strict Sources Tests
+
       - name: Build release binary
         run: swift build -c release
 

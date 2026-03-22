@@ -18,6 +18,7 @@ import Testing
     #expect(CLICommand(arguments: ["devices"]) == .devices)
     #expect(CLICommand(arguments: ["list-devices"]) == .devices)
     #expect(CLICommand(arguments: ["run"]) == .run)
+    #expect(CLICommand(arguments: ["serve"]) == .serve)
     #expect(CLICommand(arguments: ["bridge"]) == .run)
     #expect(CLICommand(arguments: ["start"]) == .start)
     #expect(CLICommand(arguments: ["stop"]) == .stop)
@@ -30,5 +31,5 @@ import Testing
 }
 
 @Test func currentVersionTracksRepoState() {
-    #expect(SoundwayVersion.current == "0.3.0")
+    #expect(SoundwayVersion.current == "0.4.0")
 }

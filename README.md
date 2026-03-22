@@ -2,7 +2,7 @@
 
 `soundway` is a small Swift package for building a macOS audio bridge that can route input from an interface like the Audient iD14 MKII into BlackHole 2ch.
 
-Current version: `0.3.0`
+Current version: `0.4.0`
 
 ## Current shape
 
@@ -16,6 +16,7 @@ Current version: `0.3.0`
 - `swift run soundway devices`
 - `swift run soundway status`
 - `swift run soundway run`
+- `swift run soundway serve`
 - `swift run soundway start`
 - `swift run soundway stop`
 

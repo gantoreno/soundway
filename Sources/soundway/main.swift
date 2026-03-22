@@ -21,43 +21,68 @@ struct SoundwayCLI {
                 exit(1)
             }
         case .status:
-            let config = BridgeConfiguration.default
             do {
-                let endpoints = try discovery.resolveEndpoints(for: config)
-                print("soundway is ready to bridge")
-                print("input: \(endpoints.input.name) [\(endpoints.input.id)]")
-                print("output: \(endpoints.output.name) [\(endpoints.output.id)]")
-                print("sample rate: \(config.sampleRate) Hz")
-                print("buffer size: \(config.bufferFrameSize) frames")
+                let response = try SoundwayServiceControl.readStatus()
+                if let status = response.status {
+                    print("soundway is ready to bridge")
+                    print("state: \(status.state)")
+                    print("version: \(status.version)")
+                    print("input: \(status.inputDevice)")
+                    print("output: \(status.outputDevice)")
+                    print("sample rate: \(status.sampleRate) Hz")
+                    print("buffer size: \(status.bufferFrames) frames")
+                } else {
+                    print(response.message ?? "bridge daemon is not running")
+                }
             } catch {
-                fputs("soundway: bridge endpoints are not fully resolved: \(error)\n", stderr)
-                exit(1)
+                let config = BridgeConfiguration.default
+                do {
+                    let endpoints = try discovery.resolveEndpoints(for: config)
+                    print("soundway is ready to bridge")
+                    print("state: not running")
+                    print("version: \(SoundwayVersion.current)")
+                    print("input: \(endpoints.input.name) [\(endpoints.input.id)]")
+                    print("output: \(endpoints.output.name) [\(endpoints.output.id)]")
+                    print("sample rate: \(config.sampleRate) Hz")
+                    print("buffer size: \(config.bufferFrameSize) frames")
+                } catch {
+                    fputs("soundway: bridge endpoints are not fully resolved: \(error)\n", stderr)
+                    exit(1)
+                }
             }
         case .run:
             do {
-                let config = BridgeConfiguration.default
-                let endpoints = try discovery.resolveEndpoints(for: config)
-                let engine = CoreAudioBridgeEngine(
-                    endpoints: endpoints,
-                    settings: .init(
-                        sampleRate: config.sampleRate,
-                        channelCount: 2,
-                        maximumFramesPerSlice: config.bufferFrameSize
-                    )
-                )
-
-                try engine.start()
-                print(engine.statusText())
-                print("press Ctrl-C to stop")
-                RunLoop.current.run()
+                let daemon = try SoundwayDaemon()
+                try daemon.run()
             } catch {
                 fputs("soundway: failed to run bridge: \(error)\n", stderr)
                 exit(1)
             }
+        case .serve:
+            do {
+                let daemon = try SoundwayDaemon()
+                try daemon.run()
+            } catch {
+                fputs("soundway: failed to serve bridge: \(error)\n", stderr)
+                exit(1)
+            }
         case .start:
-            print("starting bridge stub")
+            do {
+                let executableURL = URL(fileURLWithPath: CommandLine.arguments.first ?? "")
+                try SoundwayServiceControl.startBackgroundDaemon(executableURL: executableURL)
+                print("soundway bridge started")
+            } catch {
+                fputs("soundway: failed to start bridge: \(error)\n", stderr)
+                exit(1)
+            }
         case .stop:
-            print("stopping bridge stub")
+            do {
+                let response = try SoundwayServiceControl.stopDaemon()
+                print(response.message ?? "soundway bridge stopped")
+            } catch {
+                fputs("soundway: failed to stop bridge: \(error)\n", stderr)
+                exit(1)
+            }
         }
     }
 }

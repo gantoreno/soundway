@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Added a local bridge daemon protocol.
+- Wired `soundway start`, `soundway stop`, and `soundway status` to a shared control surface.
+- Added a `serve` mode for the background daemon.
+
 ## 0.3.0
 
 - Added a first-pass Core Audio bridge engine.

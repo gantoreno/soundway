@@ -6,6 +6,7 @@ public enum CLICommand: Sendable, Equatable {
     case devices
     case run
     case version
+    case serve
     case start
     case stop
 
@@ -24,6 +25,8 @@ public enum CLICommand: Sendable, Equatable {
             self = .run
         case "version", "--version", "-v":
             self = .version
+        case "serve":
+            self = .serve
         case "start":
             self = .start
         case "stop":
@@ -51,6 +54,7 @@ public enum CLIHelp {
       devices Show all available audio devices.
       status  Show the current bridge configuration.
       run     Run the bridge in the foreground.
+      serve   Run the bridge daemon.
       start   Start the bridge process.
       stop    Stop the bridge process.
     """

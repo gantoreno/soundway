@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:soundway}",
+      "name": "Debug soundway",
+      "target": "soundway",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug soundway"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:soundway}",
+      "name": "Release soundway",
+      "target": "soundway",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release soundway"
+    }
+  ]
+}

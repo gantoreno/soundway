@@ -10,10 +10,11 @@
 
 ## Commands
 
+- `swift run soundway devices`
 - `swift run soundway status`
 - `swift run soundway start`
 - `swift run soundway stop`
 
 ## Next step
 
-The next layer will be the real Core Audio bridge implementation and a background launch agent.
+The next layer will be the real Core Audio bridge streaming implementation and a background launch agent.

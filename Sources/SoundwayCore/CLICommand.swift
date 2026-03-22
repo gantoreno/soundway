@@ -3,6 +3,7 @@ import Foundation
 public enum CLICommand: Sendable, Equatable {
     case help
     case status
+    case devices
     case start
     case stop
 
@@ -15,6 +16,8 @@ public enum CLICommand: Sendable, Equatable {
         switch first.lowercased() {
         case "status":
             self = .status
+        case "devices", "list-devices":
+            self = .devices
         case "start":
             self = .start
         case "stop":
@@ -30,11 +33,13 @@ public enum CLIHelp {
     soundway - a small macOS audio bridge helper
 
     Usage:
+      soundway devices
       soundway status
       soundway start
       soundway stop
 
     Commands:
+      devices Show all available audio devices.
       status  Show the current bridge configuration.
       start   Start the bridge process.
       stop    Stop the bridge process.

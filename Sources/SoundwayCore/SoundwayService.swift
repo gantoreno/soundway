@@ -67,6 +67,7 @@ public struct SoundwayServiceEndpoint: Sendable, Equatable {
     }
 }
 
+/// Shared daemon control helpers used by the CLI and the background process.
 public enum SoundwayServiceControl {
     public static var endpoint: SoundwayServiceEndpoint {
         let uid = getuid()
@@ -220,6 +221,7 @@ public enum SoundwayServiceControl {
     }
 }
 
+/// Default service controller used by the command-line entry point.
 public struct SoundwayServiceController: SoundwayServiceControlling {
     public init() {}
 
@@ -258,6 +260,7 @@ internal struct SoundwayDaemonRequestHandler {
     }
 }
 
+/// Runs the bridge and serves IPC requests for the CLI.
 public final class SoundwayDaemon {
     private let config: BridgeConfiguration
     private let engine: CoreAudioBridgeEngine

@@ -3,6 +3,8 @@ import Darwin
 import Testing
 @testable import SoundwayCore
 
+// MARK: - Defaults
+
 @Test func defaultConfigurationUsesExpectedDevices() {
     let config = BridgeConfiguration.default
 
@@ -12,6 +14,8 @@ import Testing
     #expect(config.bufferFrameSize == 256)
     #expect(config.outputChannelMap.isEmpty)
 }
+
+// MARK: - CLI
 
 @Test func commandParsingRecognizesKnownCommands() {
     #expect(CLICommand(arguments: ["version"]) == .version)
@@ -54,6 +58,8 @@ import Testing
     #expect(options.outputChannelMap == [3, 4])
 }
 
+// MARK: - Configuration
+
 @Test func configurationResolverHonorsSavedConfigAndOverrides() {
     let savedConfiguration = BridgeConfiguration(
         inputDeviceName: "Interface A",
@@ -78,6 +84,8 @@ import Testing
     let fallback = fallbackResolver.resolve(overrides: SoundwayCLIOptions())
     #expect(fallback == BridgeConfiguration.default)
 }
+
+// MARK: - Routing
 
 @Test func bridgeProcessorIdentityRoutingCopiesExpectedChannels() {
     let processor = SoundwayBridgeProcessor(settings: .init(
@@ -200,6 +208,8 @@ import Testing
     #expect(telemetry.renderedFrames == 1_024)
 }
 
+// MARK: - Daemon
+
 @Test func daemonRequestHandlerBuildsStatusAndStopResponses() {
     let status = SoundwayServiceStatus(
         state: "running",
@@ -231,6 +241,8 @@ import Testing
     #expect(stopResult.shouldStop == true)
 }
 
+// MARK: - Persistence
+
 @Test func configurationStoreRoundTripsToDisk() throws {
     let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("soundway-tests-\(UUID().uuidString)")
     let storeURL = tempURL.appendingPathComponent("config.json")
@@ -252,6 +264,8 @@ import Testing
 
     #expect(loaded == configuration)
 }
+
+// MARK: - Utilities
 
 @Test func executableResolutionFindsBinaryOnPath() throws {
     let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("soundway-bin-\(UUID().uuidString)", isDirectory: true)

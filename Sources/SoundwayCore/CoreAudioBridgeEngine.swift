@@ -116,8 +116,8 @@ public final class CoreAudioBridgeEngine {
         isTransitioning = true
         sampleBufferLock.unlock()
 
-            let inputFormat = makeStreamFormat(channelCount: settings.inputChannelCount)
-            let outputFormat = makeStreamFormat(channelCount: settings.outputChannelCount)
+        let inputFormat = makeStreamFormat(channelCount: settings.inputChannelCount)
+        let outputFormat = makeStreamFormat(channelCount: settings.outputChannelCount)
         do {
             let inputUnit = try createHALOutputUnit(
                 deviceID: endpoints.input.id,

@@ -1,6 +1,8 @@
 import Foundation
 
+/// Formats status output that is shared between the daemon and CLI.
 public enum SoundwayStatusFormatting {
+    /// Describes a routing table in human-readable form.
     public static func describeRouting(_ route: [Int]) -> String {
         guard !route.isEmpty else {
             return "identity"

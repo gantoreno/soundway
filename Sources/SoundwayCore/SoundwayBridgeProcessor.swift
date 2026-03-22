@@ -69,6 +69,7 @@ internal final class SoundwayBridgeProcessor {
 
         inputCallbackCount += 1
 
+        // Keep a bounded ring buffer so capture and render can advance independently.
         let frameCount = min(input.frameCount, sampleBufferCapacityFrames)
         guard frameCount > 0 else { return }
 
@@ -168,6 +169,7 @@ internal final class SoundwayBridgeProcessor {
         lock.lock()
         defer { lock.unlock() }
 
+        // Clear the entire buffer so a restarted bridge begins from silence.
         readFrameIndex = 0
         writeFrameIndex = 0
         storedFrameCount = 0

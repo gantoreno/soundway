@@ -96,6 +96,8 @@ Run the full suite with:
 make test
 ```
 
+GitHub Actions also runs `swift build -c release` and `swift test` on every push and pull request.
+
 ## Roadmap
 
 - More advanced per-channel mixing and remapping

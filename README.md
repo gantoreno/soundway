@@ -1,41 +1,104 @@
-# soundway
+<p align="center">
+  <img src="assets/soundway.png" alt="soundway logo" width="180" />
+</p>
 
-`soundway` is a small Swift package for building a macOS audio bridge that can route input from an interface like the Audient iD14 into BlackHole 2ch.
+# Soundway
 
-Current version: `0.7.0`
+A simple macOS audio interface routing utility.
 
-## Current state
+## What it does
 
-- `soundway`: executable CLI entrypoint
-- `SoundwayCore`: reusable package module for bridge configuration and control logic
-- `SoundwayCoreTests`: basic package tests
-- Live foreground bridge and daemon mode both work
-- `soundway status` reports channel counts, routing, frame counts, peaks, callback counts, and render statuses
-- Device names and output channel routing can now be overridden from the command line
-- The last chosen configuration is saved locally so the daemon and status stay in sync
-- The routing and telemetry core is now covered by deterministic unit tests
-
-## Commands
-
-- `make build`
-- `make test`
-- `make release`
-- `make install`
-- `swift run soundway --version`
-- `swift run soundway devices`
-- `swift run soundway status`
-- `swift run soundway run`
-- `swift run soundway serve`
-- `swift run soundway start`
-- `swift run soundway stop`
+- Bridges live audio from your interface into BlackHole
+- Lets Discord and similar apps use BlackHole as their input
+- Supports configurable device names, channel routing, and saved config
+- Includes a deterministic, testable bridge core
 
 ## Install
 
-`make install` builds the release binary and installs it to `$(PREFIX)/bin`, which defaults to `/usr/local/bin`.
+Build and install the release binary with:
 
-## Next parts
+```bash
+make install
+```
 
-- Expand routing into more advanced per-channel mixing or remapping options
-- Expand the deterministic test suite with more daemon lifecycle coverage
-- Wrap the daemon in a launch agent for native background startup
-- Trim the remaining debug-oriented telemetry once the bridge settles
+That installs `soundway` to `$(PREFIX)/bin`, which defaults to `/usr/local/bin`.
+
+## Quick Start
+
+Start with the defaults:
+
+```bash
+soundway run
+```
+
+Or start the background daemon:
+
+```bash
+soundway start
+```
+
+Then point Discord at BlackHole:
+
+```bash
+soundway status
+```
+
+## Configuration
+
+You can override the device names and routing from the command line:
+
+```bash
+soundway run \
+  --input-device "Audient iD14" \
+  --output-device "BlackHole 2ch" \
+  --route 3,4
+```
+
+Routing is 1-based and maps output channels in order. For example, `--route 3,4` means:
+
+- BlackHole channel 1 receives input channel 3
+- BlackHole channel 2 receives input channel 4
+
+The last chosen configuration is saved to:
+
+```text
+~/Library/Application Support/soundway/config.json
+```
+
+## Commands
+
+| Command              | Description                          |
+| -------------------- | ------------------------------------ |
+| `make build`         | Build the debug binary               |
+| `make test`          | Run the test suite                   |
+| `make release`       | Build an optimized release binary    |
+| `make install`       | Build and install the release binary |
+| `soundway --version` | Print the current version            |
+| `soundway devices`   | List detected audio devices          |
+| `soundway status`    | Show bridge state and telemetry      |
+| `soundway run`       | Run the bridge in the foreground     |
+| `soundway serve`     | Run the daemon mode directly         |
+| `soundway start`     | Start the bridge in the background   |
+| `soundway stop`      | Stop the running bridge              |
+
+## Current State
+
+- Foreground and background bridge modes both work
+- `soundway status` reports routing, frame counts, peaks, callback counts, and render statuses
+- The bridge core is covered by deterministic unit tests
+- Core Audio remains isolated behind a thin adapter
+
+## Testing
+
+Run the full suite with:
+
+```bash
+make test
+```
+
+## Roadmap
+
+- More advanced per-channel mixing and remapping
+- More daemon lifecycle integration tests
+- LaunchAgent packaging for native background startup
+- Trim debug-oriented telemetry once the bridge settles

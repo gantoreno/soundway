@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import CoreAudio
 
 public enum SoundwayServiceError: Error, Sendable, Equatable {
     case socketCreationFailed(Int32)
@@ -29,8 +30,18 @@ public struct SoundwayServiceStatus: Codable, Sendable, Equatable {
     public let version: String
     public let inputDevice: String
     public let outputDevice: String
+    public let inputChannels: UInt32
+    public let outputChannels: UInt32
     public let sampleRate: Double
     public let bufferFrames: UInt32
+    public let capturedFrames: UInt64
+    public let renderedFrames: UInt64
+    public let inputPeak: Float
+    public let outputPeak: Float
+    public let inputCallbackCount: UInt64
+    public let outputCallbackCount: UInt64
+    public let lastInputRenderStatus: Int32
+    public let lastOutputRenderStatus: Int32
 }
 
 public struct SoundwayServiceResponse: Codable, Sendable, Equatable {
@@ -190,17 +201,22 @@ public final class SoundwayDaemon {
     private let config: BridgeConfiguration
     private let engine: CoreAudioBridgeEngine
     private let endpoint = SoundwayServiceControl.endpoint
+    private let inputChannelCount: UInt32
+    private let outputChannelCount: UInt32
     private var listenerFD: Int32 = -1
 
     public init(configuration: BridgeConfiguration = .default) throws {
         self.config = configuration
         let discovery = AudioDeviceDiscovery()
         let endpoints = try discovery.resolveEndpoints(for: configuration)
+        self.inputChannelCount = try discovery.channelCount(for: endpoints.input.id, scope: kAudioObjectPropertyScopeInput)
+        self.outputChannelCount = try discovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
         self.engine = CoreAudioBridgeEngine(
             endpoints: endpoints,
             settings: .init(
                 sampleRate: configuration.sampleRate,
-                channelCount: 2,
+                inputChannelCount: inputChannelCount,
+                outputChannelCount: outputChannelCount,
                 maximumFramesPerSlice: configuration.bufferFrameSize
             )
         )
@@ -238,13 +254,24 @@ public final class SoundwayDaemon {
 
             switch request.action {
             case .status:
+                let telemetry = engine.telemetry()
                 let status = SoundwayServiceStatus(
                     state: engine.currentState == .running ? "running" : "stopped",
                     version: SoundwayVersion.current,
                     inputDevice: config.inputDeviceName,
                     outputDevice: config.outputDeviceName,
+                    inputChannels: inputChannelCount,
+                    outputChannels: outputChannelCount,
                     sampleRate: config.sampleRate,
-                    bufferFrames: config.bufferFrameSize
+                    bufferFrames: config.bufferFrameSize,
+                    capturedFrames: telemetry.capturedFrames,
+                    renderedFrames: telemetry.renderedFrames,
+                    inputPeak: telemetry.inputPeak,
+                    outputPeak: telemetry.outputPeak,
+                    inputCallbackCount: telemetry.inputCallbackCount,
+                    outputCallbackCount: telemetry.outputCallbackCount,
+                    lastInputRenderStatus: telemetry.lastInputRenderStatus,
+                    lastOutputRenderStatus: telemetry.lastOutputRenderStatus
                 )
                 try Self.writeResponse(.success(status: status), fd: clientFD)
             case .stop:

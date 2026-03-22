@@ -1,14 +1,16 @@
 # soundway
 
-`soundway` is a small Swift package for building a macOS audio bridge that can route input from an interface like the Audient iD14 MKII into BlackHole 2ch.
+`soundway` is a small Swift package for building a macOS audio bridge that can route input from an interface like the Audient iD14 into BlackHole 2ch.
 
-Current version: `0.4.0`
+Current version: `0.5.0`
 
-## Current shape
+## Current state
 
 - `soundway`: executable CLI entrypoint
 - `SoundwayCore`: reusable package module for bridge configuration and control logic
 - `SoundwayCoreTests`: basic package tests
+- Live foreground bridge and daemon mode both work
+- `soundway status` reports channel counts, frame counts, peaks, callback counts, and render statuses
 
 ## Commands
 
@@ -20,6 +22,8 @@ Current version: `0.4.0`
 - `swift run soundway start`
 - `swift run soundway stop`
 
-## Next step
+## Next parts
 
-The next layer will be the real Core Audio bridge streaming implementation and a background launch agent.
+- Add configurable device names and routing options
+- Wrap the daemon in a launch agent for native background startup
+- Trim the remaining debug-oriented telemetry once the bridge settles

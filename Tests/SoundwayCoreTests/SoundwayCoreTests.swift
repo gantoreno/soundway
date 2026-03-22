@@ -4,7 +4,7 @@ import Testing
 @Test func defaultConfigurationUsesExpectedDevices() {
     let config = BridgeConfiguration.default
 
-    #expect(config.inputDeviceName == "Audient iD14 MKII")
+    #expect(config.inputDeviceName == "Audient iD14")
     #expect(config.outputDeviceName == "BlackHole 2ch")
     #expect(config.sampleRate == 48_000)
     #expect(config.bufferFrameSize == 256)
@@ -31,5 +31,5 @@ import Testing
 }
 
 @Test func currentVersionTracksRepoState() {
-    #expect(SoundwayVersion.current == "0.4.0")
+    #expect(SoundwayVersion.current == "0.5.0")
 }

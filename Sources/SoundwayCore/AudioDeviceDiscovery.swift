@@ -16,6 +16,7 @@ public enum AudioDeviceDiscoveryError: Error, Sendable, Equatable {
     case hardwareQueryFailed(OSStatus)
     case deviceNotFound(String)
     case nameQueryFailed(AudioDeviceID, OSStatus)
+    case streamConfigurationQueryFailed(AudioDeviceID, OSStatus)
 }
 
 public struct AudioDeviceDiscovery: Sendable {
@@ -44,6 +45,35 @@ public struct AudioDeviceDiscovery: Sendable {
         let input = try device(named: configuration.inputDeviceName)
         let output = try device(named: configuration.outputDeviceName)
         return ResolvedBridgeEndpoints(input: input, output: output)
+    }
+
+    public func channelCount(for deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) throws -> UInt32 {
+        let format = try streamFormat(for: deviceID, scope: scope)
+        return max(1, format.mChannelsPerFrame)
+    }
+
+    private func streamFormat(for deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) throws -> AudioStreamBasicDescription {
+        var formatAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamFormat,
+            mScope: scope,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var format = AudioStreamBasicDescription()
+        var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.stride)
+        let formatStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &formatAddress,
+            0,
+            nil,
+            &formatSize,
+            &format
+        )
+        guard formatStatus == noErr else {
+            throw AudioDeviceDiscoveryError.streamConfigurationQueryFailed(deviceID, formatStatus)
+        }
+
+        return format
     }
 
     public func listDevicesText() throws -> String {

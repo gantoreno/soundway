@@ -21,7 +21,7 @@ public struct BridgeConfiguration: Sendable, Equatable {
 
 public extension BridgeConfiguration {
     static let `default` = BridgeConfiguration(
-        inputDeviceName: "Audient iD14 MKII",
+        inputDeviceName: "Audient iD14",
         outputDeviceName: "BlackHole 2ch",
         sampleRate: 48_000,
         bufferFrameSize: 256

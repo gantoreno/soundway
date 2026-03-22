@@ -11,14 +11,32 @@ public enum CoreAudioBridgeEngineError: Error, Sendable, Equatable {
 }
 
 public final class CoreAudioBridgeEngine {
-    public struct Settings: Sendable, Equatable {
+    public struct Telemetry: Sendable, Equatable {
+        public let capturedFrames: UInt64
+        public let renderedFrames: UInt64
+        public let inputPeak: Float
+        public let outputPeak: Float
+        public let inputCallbackCount: UInt64
+        public let outputCallbackCount: UInt64
+        public let lastInputRenderStatus: OSStatus
+        public let lastOutputRenderStatus: OSStatus
+    }
+
+    public struct Settings: Sendable {
         public var sampleRate: Double
-        public var channelCount: UInt32
+        public var inputChannelCount: UInt32
+        public var outputChannelCount: UInt32
         public var maximumFramesPerSlice: UInt32
 
-        public init(sampleRate: Double, channelCount: UInt32, maximumFramesPerSlice: UInt32) {
+        public init(
+            sampleRate: Double,
+            inputChannelCount: UInt32,
+            outputChannelCount: UInt32,
+            maximumFramesPerSlice: UInt32
+        ) {
             self.sampleRate = sampleRate
-            self.channelCount = channelCount
+            self.inputChannelCount = inputChannelCount
+            self.outputChannelCount = outputChannelCount
             self.maximumFramesPerSlice = maximumFramesPerSlice
         }
     }
@@ -31,15 +49,26 @@ public final class CoreAudioBridgeEngine {
     private let endpoints: ResolvedBridgeEndpoints
     private let settings: Settings
     private let sampleBufferCapacityFrames: Int
+    private let bridgeChannelCount: Int
+    private let inputChannelCount: Int
+    private let outputChannelCount: Int
     private var sampleBuffer: [Float]
     private let sampleBufferLock = NSLock()
-    private let inputScratch: UnsafeMutablePointer<Float>
-    private let inputScratchFrames: Int
-    private let inputScratchBytes: UInt32
+    private let inputChannelBuffers: [UnsafeMutablePointer<Float>]
+    private let inputFrameCapacity: Int
     private let inputBufferList: UnsafeMutableAudioBufferListPointer
+    private let effectiveMaximumFramesPerSlice: UInt32
     private var readFrameIndex: Int = 0
     private var writeFrameIndex: Int = 0
     private var storedFrameCount: Int = 0
+    private var capturedFrames: UInt64 = 0
+    private var renderedFrames: UInt64 = 0
+    private var inputPeak: Float = 0
+    private var outputPeak: Float = 0
+    private var inputCallbackCount: UInt64 = 0
+    private var outputCallbackCount: UInt64 = 0
+    private var lastInputRenderStatus: OSStatus = noErr
+    private var lastOutputRenderStatus: OSStatus = noErr
     private var inputUnit: AudioUnit?
     private var outputUnit: AudioUnit?
     private var state: State = .stopped
@@ -49,26 +78,43 @@ public final class CoreAudioBridgeEngine {
         self.endpoints = endpoints
         self.settings = settings
         self.sampleBufferCapacityFrames = max(Int(settings.maximumFramesPerSlice) * 16, 1024)
+        let inputChannelCount = max(1, Int(settings.inputChannelCount))
+        let outputChannelCount = max(1, Int(settings.outputChannelCount))
+        let bridgeChannelCount = max(inputChannelCount, outputChannelCount)
+        let effectiveMaximumFramesPerSlice = max(settings.maximumFramesPerSlice, 4096)
 
-        let totalSampleCount = sampleBufferCapacityFrames * Int(settings.channelCount)
+        self.inputChannelCount = inputChannelCount
+        self.outputChannelCount = outputChannelCount
+        self.bridgeChannelCount = bridgeChannelCount
+        self.effectiveMaximumFramesPerSlice = effectiveMaximumFramesPerSlice
+
+        let totalSampleCount = sampleBufferCapacityFrames * bridgeChannelCount
         self.sampleBuffer = Array(repeating: 0, count: totalSampleCount)
 
-        self.inputScratchFrames = Int(settings.maximumFramesPerSlice)
-        self.inputScratch = UnsafeMutablePointer<Float>.allocate(capacity: inputScratchFrames * Int(settings.channelCount))
-        self.inputScratch.initialize(repeating: 0, count: inputScratchFrames * Int(settings.channelCount))
-        self.inputScratchBytes = UInt32(inputScratchFrames * Int(settings.channelCount) * MemoryLayout<Float>.stride)
+        let inputFrameCapacity = max(Int(effectiveMaximumFramesPerSlice) * 2, 4096)
+        self.inputFrameCapacity = inputFrameCapacity
+        let inputChannelBuffers = (0..<inputChannelCount).map { _ in
+            let buffer = UnsafeMutablePointer<Float>.allocate(capacity: inputFrameCapacity)
+            buffer.initialize(repeating: 0, count: inputFrameCapacity)
+            return buffer
+        }
+        self.inputChannelBuffers = inputChannelBuffers
 
-        self.inputBufferList = AudioBufferList.allocate(maximumBuffers: 1)
-        self.inputBufferList[0] = AudioBuffer(
-            mNumberChannels: settings.channelCount,
-            mDataByteSize: inputScratchBytes,
-            mData: inputScratch
-        )
+        self.inputBufferList = AudioBufferList.allocate(maximumBuffers: inputChannelCount)
+        for channel in 0..<inputChannelCount {
+            self.inputBufferList[channel] = AudioBuffer(
+                mNumberChannels: 1,
+                mDataByteSize: UInt32(inputFrameCapacity * MemoryLayout<Float>.stride),
+                mData: inputChannelBuffers[channel]
+            )
+        }
     }
 
     deinit {
         stop()
-        inputScratch.deallocate()
+        for buffer in inputChannelBuffers {
+            buffer.deallocate()
+        }
     }
 
     public var currentState: State {
@@ -86,21 +132,22 @@ public final class CoreAudioBridgeEngine {
         isTransitioning = true
         sampleBufferLock.unlock()
 
-        let format = makeStreamFormat()
+            let inputFormat = makeStreamFormat(channelCount: settings.inputChannelCount)
+            let outputFormat = makeStreamFormat(channelCount: settings.outputChannelCount)
         do {
             let inputUnit = try createHALOutputUnit(
                 deviceID: endpoints.input.id,
                 enableInput: true,
                 enableOutput: false,
-                format: format,
-                maximumFramesPerSlice: settings.maximumFramesPerSlice
+                format: inputFormat,
+                maximumFramesPerSlice: effectiveMaximumFramesPerSlice
             )
             let outputUnit = try createHALOutputUnit(
                 deviceID: endpoints.output.id,
                 enableInput: false,
                 enableOutput: true,
-                format: format,
-                maximumFramesPerSlice: settings.maximumFramesPerSlice
+                format: outputFormat,
+                maximumFramesPerSlice: effectiveMaximumFramesPerSlice
             )
 
             let inputContext = Unmanaged.passUnretained(self).toOpaque()
@@ -191,6 +238,22 @@ public final class CoreAudioBridgeEngine {
         }
     }
 
+    public func telemetry() -> Telemetry {
+        sampleBufferLock.lock()
+        defer { sampleBufferLock.unlock() }
+
+        return Telemetry(
+            capturedFrames: capturedFrames,
+            renderedFrames: renderedFrames,
+            inputPeak: inputPeak,
+            outputPeak: outputPeak,
+            inputCallbackCount: inputCallbackCount,
+            outputCallbackCount: outputCallbackCount,
+            lastInputRenderStatus: lastInputRenderStatus,
+            lastOutputRenderStatus: lastOutputRenderStatus
+        )
+    }
+
     private func detachUnits() -> (input: AudioUnit?, output: AudioUnit?) {
         sampleBufferLock.lock()
         defer { sampleBufferLock.unlock() }
@@ -205,14 +268,18 @@ public final class CoreAudioBridgeEngine {
     }
 
     private func makeStreamFormat() -> AudioStreamBasicDescription {
+        makeStreamFormat(channelCount: settings.inputChannelCount)
+    }
+
+    private func makeStreamFormat(channelCount: UInt32) -> AudioStreamBasicDescription {
         AudioStreamBasicDescription(
             mSampleRate: settings.sampleRate,
             mFormatID: kAudioFormatLinearPCM,
-            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagsNativeEndian,
-            mBytesPerPacket: settings.channelCount * UInt32(MemoryLayout<Float>.stride),
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsNonInterleaved | kAudioFormatFlagsNativeEndian,
+            mBytesPerPacket: UInt32(MemoryLayout<Float>.stride),
             mFramesPerPacket: 1,
-            mBytesPerFrame: settings.channelCount * UInt32(MemoryLayout<Float>.stride),
-            mChannelsPerFrame: settings.channelCount,
+            mBytesPerFrame: UInt32(MemoryLayout<Float>.stride),
+            mChannelsPerFrame: channelCount,
             mBitsPerChannel: 32,
             mReserved: 0
         )
@@ -331,23 +398,28 @@ public final class CoreAudioBridgeEngine {
     ) -> OSStatus {
         guard let inputUnit else { return noErr }
 
+        sampleBufferLock.lock()
+        inputCallbackCount += 1
+        sampleBufferLock.unlock()
+
         var flags = AudioUnitRenderActionFlags()
         let renderStatus = AudioUnitRender(
             inputUnit,
             &flags,
             timeStamp,
-            busNumber,
-            min(frameCount, UInt32(inputScratchFrames)),
+            1,
+            frameCount,
             inputBufferList.unsafeMutablePointer
         )
+        sampleBufferLock.lock()
+        lastInputRenderStatus = renderStatus
+        sampleBufferLock.unlock()
         guard renderStatus == noErr else {
             return renderStatus
         }
 
-        let channels = Int(settings.channelCount)
-        let framesToStore = min(Int(frameCount), inputScratchFrames)
-        let samples = inputScratch
-        appendCapturedFrames(samples, frameCount: framesToStore, channels: channels)
+        let framesToStore = min(Int(frameCount), inputFrameCapacity)
+        appendCapturedFrames(from: inputBufferList, frameCount: framesToStore)
         return noErr
     }
 
@@ -356,16 +428,13 @@ public final class CoreAudioBridgeEngine {
         ioData: UnsafeMutablePointer<AudioBufferList>
     ) -> OSStatus {
         let bufferList = UnsafeMutableAudioBufferListPointer(ioData)
-        let channels = Int(settings.channelCount)
-        let framesToFill = Int(frameCount)
-        drainInto(bufferList, frameCount: framesToFill, channels: channels)
+        drainInto(bufferList, frameCount: Int(frameCount))
         return noErr
     }
 
     private func appendCapturedFrames(
-        _ source: UnsafeMutablePointer<Float>,
-        frameCount: Int,
-        channels: Int
+        from bufferList: UnsafeMutableAudioBufferListPointer,
+        frameCount: Int
     ) {
         sampleBufferLock.lock()
         defer { sampleBufferLock.unlock() }
@@ -373,7 +442,8 @@ public final class CoreAudioBridgeEngine {
         guard frameCount > 0 else { return }
 
         let frameCount = min(frameCount, sampleBufferCapacityFrames)
-        let sourceSampleStart = 0
+        var localPeak: Float = 0
+        let availableChannels = min(bufferList.count, bridgeChannelCount)
 
         if frameCount >= sampleBufferCapacityFrames {
             readFrameIndex = 0
@@ -388,21 +458,28 @@ public final class CoreAudioBridgeEngine {
 
         for frameOffset in 0..<frameCount {
             let destinationFrameIndex = (writeFrameIndex + frameOffset) % sampleBufferCapacityFrames
-            let destinationSampleBase = destinationFrameIndex * channels
-            let sourceSampleBase = sourceSampleStart + (frameOffset * channels)
-            for channel in 0..<channels {
-                sampleBuffer[destinationSampleBase + channel] = source.advanced(by: sourceSampleBase + channel).pointee
+            let destinationSampleBase = destinationFrameIndex * bridgeChannelCount
+            for channel in 0..<bridgeChannelCount {
+                let sample: Float
+                if channel < availableChannels, let source = bufferList[channel].mData?.assumingMemoryBound(to: Float.self) {
+                    sample = source[frameOffset]
+                } else {
+                    sample = 0
+                }
+                sampleBuffer[destinationSampleBase + channel] = sample
+                localPeak = max(localPeak, abs(sample))
             }
         }
 
         writeFrameIndex = (writeFrameIndex + frameCount) % sampleBufferCapacityFrames
         storedFrameCount += frameCount
+        capturedFrames += UInt64(frameCount)
+        inputPeak = localPeak
     }
 
     private func drainInto(
         _ bufferList: UnsafeMutableAudioBufferListPointer,
-        frameCount: Int,
-        channels: Int
+        frameCount: Int
     ) {
         sampleBufferLock.lock()
         defer { sampleBufferLock.unlock() }
@@ -410,31 +487,47 @@ public final class CoreAudioBridgeEngine {
         guard frameCount > 0 else { return }
 
         let framesToCopy = min(frameCount, storedFrameCount)
-        let silenceFrames = frameCount - framesToCopy
+        var localPeak: Float = 0
+
+        outputCallbackCount += 1
 
         if bufferList.count > 0 {
-            guard let destination = bufferList[0].mData?.assumingMemoryBound(to: Float.self) else {
-                return
-            }
+            let destinationChannels = min(bufferList.count, outputChannelCount)
+            for channel in 0..<destinationChannels {
+                guard let destination = bufferList[channel].mData?.assumingMemoryBound(to: Float.self) else {
+                    continue
+                }
 
-            for frameOffset in 0..<framesToCopy {
-                let sourceFrameIndex = (readFrameIndex + frameOffset) % sampleBufferCapacityFrames
-                let sourceSampleBase = sourceFrameIndex * channels
-                let destinationSampleBase = frameOffset * channels
-                for channel in 0..<channels {
-                    destination[destinationSampleBase + channel] = sampleBuffer[sourceSampleBase + channel]
+                for frameOffset in 0..<frameCount {
+                    destination[frameOffset] = 0
+                }
+
+                for frameOffset in 0..<framesToCopy {
+                    let sourceFrameIndex = (readFrameIndex + frameOffset) % sampleBufferCapacityFrames
+                    let sourceSampleBase = sourceFrameIndex * bridgeChannelCount
+                    let sample = channel < bridgeChannelCount ? sampleBuffer[sourceSampleBase + channel] : 0
+                    destination[frameOffset] = sample
+                    localPeak = max(localPeak, abs(sample))
                 }
             }
 
-            if framesToCopy < frameCount {
-                let silenceStartSample = framesToCopy * channels
-                let silenceSampleCount = silenceFrames * channels
-                destination.advanced(by: silenceStartSample).initialize(repeating: 0, count: silenceSampleCount)
+            if destinationChannels < bufferList.count {
+                for channel in destinationChannels..<bufferList.count {
+                    guard let destination = bufferList[channel].mData?.assumingMemoryBound(to: Float.self) else {
+                        continue
+                    }
+                    for frameOffset in 0..<frameCount {
+                        destination[frameOffset] = 0
+                    }
+                }
             }
         }
 
         readFrameIndex = (readFrameIndex + framesToCopy) % sampleBufferCapacityFrames
         storedFrameCount -= framesToCopy
+        renderedFrames += UInt64(framesToCopy)
+        outputPeak = localPeak
+        lastOutputRenderStatus = noErr
     }
 
     private static let inputDeviceCallback: AURenderCallback = { refCon, _, timeStamp, busNumber, frameCount, _ in

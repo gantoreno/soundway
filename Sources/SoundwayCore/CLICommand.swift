@@ -49,6 +49,13 @@ public enum CLIHelp {
       soundway start
       soundway stop
 
+    Options:
+      --input-device NAME  Override the input device name.
+      --output-device NAME Override the output device name.
+      --route LIST         Route output channels from input channels (1-based, comma-separated).
+      --sample-rate HZ     Override the audio sample rate.
+      --buffer-size FRAMES Override the HAL buffer size.
+
     Commands:
       version Show the current soundway version.
       devices Show all available audio devices.

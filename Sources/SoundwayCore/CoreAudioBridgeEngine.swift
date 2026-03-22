@@ -27,17 +27,20 @@ public final class CoreAudioBridgeEngine {
         public var inputChannelCount: UInt32
         public var outputChannelCount: UInt32
         public var maximumFramesPerSlice: UInt32
+        public var outputChannelMap: [Int]
 
         public init(
             sampleRate: Double,
             inputChannelCount: UInt32,
             outputChannelCount: UInt32,
-            maximumFramesPerSlice: UInt32
+            maximumFramesPerSlice: UInt32,
+            outputChannelMap: [Int] = []
         ) {
             self.sampleRate = sampleRate
             self.inputChannelCount = inputChannelCount
             self.outputChannelCount = outputChannelCount
             self.maximumFramesPerSlice = maximumFramesPerSlice
+            self.outputChannelMap = outputChannelMap
         }
     }
 
@@ -502,10 +505,14 @@ public final class CoreAudioBridgeEngine {
                     destination[frameOffset] = 0
                 }
 
+                let sourceChannelIndex = outputSourceChannelIndex(for: channel)
                 for frameOffset in 0..<framesToCopy {
                     let sourceFrameIndex = (readFrameIndex + frameOffset) % sampleBufferCapacityFrames
                     let sourceSampleBase = sourceFrameIndex * bridgeChannelCount
-                    let sample = channel < bridgeChannelCount ? sampleBuffer[sourceSampleBase + channel] : 0
+                    let sample = sourceChannelIndex.flatMap { sourceChannel -> Float? in
+                        guard sourceChannel < bridgeChannelCount else { return nil }
+                        return sampleBuffer[sourceSampleBase + sourceChannel]
+                    } ?? 0
                     destination[frameOffset] = sample
                     localPeak = max(localPeak, abs(sample))
                 }
@@ -528,6 +535,15 @@ public final class CoreAudioBridgeEngine {
         renderedFrames += UInt64(framesToCopy)
         outputPeak = localPeak
         lastOutputRenderStatus = noErr
+    }
+
+    private func outputSourceChannelIndex(for outputChannel: Int) -> Int? {
+        guard outputChannel >= 0 else { return nil }
+        if outputChannel < settings.outputChannelMap.count {
+            let mappedChannel = settings.outputChannelMap[outputChannel]
+            return mappedChannel > 0 ? mappedChannel - 1 : nil
+        }
+        return outputChannel
     }
 
     private static let inputDeviceCallback: AURenderCallback = { refCon, _, timeStamp, busNumber, frameCount, _ in

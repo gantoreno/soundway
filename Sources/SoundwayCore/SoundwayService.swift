@@ -32,6 +32,7 @@ public struct SoundwayServiceStatus: Codable, Sendable, Equatable {
     public let outputDevice: String
     public let inputChannels: UInt32
     public let outputChannels: UInt32
+    public let outputChannelMap: [Int]
     public let sampleRate: Double
     public let bufferFrames: UInt32
     public let capturedFrames: UInt64
@@ -71,6 +72,28 @@ public enum SoundwayServiceControl {
         let uid = getuid()
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("soundway-\(uid).sock")
         return SoundwayServiceEndpoint(socketURL: path)
+    }
+
+    public static func resolveExecutableURL(commandName: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
+        let fileManager = FileManager.default
+
+        if commandName.contains("/") {
+            return fileManager.isExecutableFile(atPath: commandName) ? URL(fileURLWithPath: commandName) : nil
+        }
+
+        guard let pathValue = environment["PATH"], !pathValue.isEmpty else {
+            return nil
+        }
+
+        for component in pathValue.split(separator: ":") {
+            let directory = String(component)
+            let candidatePath = (directory as NSString).appendingPathComponent(commandName)
+            if fileManager.isExecutableFile(atPath: candidatePath) {
+                return URL(fileURLWithPath: candidatePath)
+            }
+        }
+
+        return nil
     }
 
     public static func startBackgroundDaemon(executableURL: URL) throws {
@@ -205,19 +228,21 @@ public final class SoundwayDaemon {
     private let outputChannelCount: UInt32
     private var listenerFD: Int32 = -1
 
-    public init(configuration: BridgeConfiguration = .default) throws {
-        self.config = configuration
+    public init(configuration: BridgeConfiguration? = nil, configurationStore: SoundwayConfigurationStore = .init()) throws {
+        let resolvedConfiguration = try configuration ?? configurationStore.load() ?? .default
+        self.config = resolvedConfiguration
         let discovery = AudioDeviceDiscovery()
-        let endpoints = try discovery.resolveEndpoints(for: configuration)
+        let endpoints = try discovery.resolveEndpoints(for: resolvedConfiguration)
         self.inputChannelCount = try discovery.channelCount(for: endpoints.input.id, scope: kAudioObjectPropertyScopeInput)
         self.outputChannelCount = try discovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
         self.engine = CoreAudioBridgeEngine(
             endpoints: endpoints,
             settings: .init(
-                sampleRate: configuration.sampleRate,
+                sampleRate: resolvedConfiguration.sampleRate,
                 inputChannelCount: inputChannelCount,
                 outputChannelCount: outputChannelCount,
-                maximumFramesPerSlice: configuration.bufferFrameSize
+                maximumFramesPerSlice: resolvedConfiguration.bufferFrameSize,
+                outputChannelMap: resolvedConfiguration.outputChannelMap
             )
         )
     }
@@ -262,6 +287,7 @@ public final class SoundwayDaemon {
                     outputDevice: config.outputDeviceName,
                     inputChannels: inputChannelCount,
                     outputChannels: outputChannelCount,
+                    outputChannelMap: config.outputChannelMap,
                     sampleRate: config.sampleRate,
                     bufferFrames: config.bufferFrameSize,
                     capturedFrames: telemetry.capturedFrames,

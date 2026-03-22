@@ -7,7 +7,31 @@ struct SoundwayCLI {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
         let command = CLICommand(arguments: arguments)
+        let optionArguments = Array(arguments.dropFirst())
+        let configurationStore = SoundwayConfigurationStore()
         let discovery = AudioDeviceDiscovery()
+        let cliOptions: SoundwayCLIOptions
+
+        do {
+            cliOptions = try SoundwayCLIOptions.parse(arguments: optionArguments)
+        } catch {
+            fputs("soundway: invalid options: \(error)\n", stderr)
+            exit(1)
+        }
+
+        func resolvedConfiguration() -> BridgeConfiguration {
+            let loadedConfiguration = (try? configurationStore.load()) ?? .default
+            return cliOptions.applying(to: loadedConfiguration)
+        }
+
+        func describeRouting(_ route: [Int]) -> String {
+            guard !route.isEmpty else {
+                return "identity"
+            }
+            return route.enumerated().map { index, source in
+                "\(index + 1)->\(source > 0 ? source : 0)"
+            }.joined(separator: ", ")
+        }
 
         switch command {
         case .help:
@@ -32,6 +56,7 @@ struct SoundwayCLI {
                     print("output: \(status.outputDevice)")
                     print("input channels: \(status.inputChannels)")
                     print("output channels: \(status.outputChannels)")
+                    print("channel routing: \(describeRouting(status.outputChannelMap))")
                     print("sample rate: \(status.sampleRate) Hz")
                     print("buffer size: \(status.bufferFrames) frames")
                     print("captured frames: \(status.capturedFrames)")
@@ -46,7 +71,7 @@ struct SoundwayCLI {
                     print(response.message ?? "bridge daemon is not running")
                 }
             } catch {
-                let config = BridgeConfiguration.default
+                let config = resolvedConfiguration()
                 do {
                     let endpoints = try discovery.resolveEndpoints(for: config)
                     print("soundway is ready to bridge")
@@ -58,6 +83,7 @@ struct SoundwayCLI {
                     let outputChannels = try discovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
                     print("input channels: \(inputChannels)")
                     print("output channels: \(outputChannels)")
+                    print("channel routing: \(describeRouting(config.outputChannelMap))")
                     print("sample rate: \(config.sampleRate) Hz")
                     print("buffer size: \(config.bufferFrameSize) frames")
                     print("captured frames: 0")
@@ -75,7 +101,11 @@ struct SoundwayCLI {
             }
         case .run:
             do {
-                let daemon = try SoundwayDaemon()
+                let configuration = resolvedConfiguration()
+                if !cliOptions.isEmpty {
+                    try configurationStore.save(configuration)
+                }
+                let daemon = try SoundwayDaemon(configuration: configuration)
                 try daemon.run()
             } catch {
                 fputs("soundway: failed to run bridge: \(error)\n", stderr)
@@ -83,7 +113,11 @@ struct SoundwayCLI {
             }
         case .serve:
             do {
-                let daemon = try SoundwayDaemon()
+                let configuration = resolvedConfiguration()
+                if !cliOptions.isEmpty {
+                    try configurationStore.save(configuration)
+                }
+                let daemon = try SoundwayDaemon(configuration: configuration)
                 try daemon.run()
             } catch {
                 fputs("soundway: failed to serve bridge: \(error)\n", stderr)
@@ -91,6 +125,10 @@ struct SoundwayCLI {
             }
         case .start:
             do {
+                let configuration = resolvedConfiguration()
+                if !cliOptions.isEmpty {
+                    try configurationStore.save(configuration)
+                }
                 let executableURL = URL(fileURLWithPath: CommandLine.arguments.first ?? "")
                 try SoundwayServiceControl.startBackgroundDaemon(executableURL: executableURL)
                 print("soundway bridge started")

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SoundwayCore
 
@@ -8,6 +9,7 @@ import Testing
     #expect(config.outputDeviceName == "BlackHole 2ch")
     #expect(config.sampleRate == 48_000)
     #expect(config.bufferFrameSize == 256)
+    #expect(config.outputChannelMap.isEmpty)
 }
 
 @Test func commandParsingRecognizesKnownCommands() {
@@ -30,6 +32,44 @@ import Testing
     #expect(AudioDeviceDiscovery.normalizeName("  BlackHole 2CH ") == "blackhole 2ch")
 }
 
+@Test func cliOptionsParseDeviceAndRoutingOverrides() throws {
+    let options = try SoundwayCLIOptions.parse(arguments: [
+        "--input-device", "Audient iD14",
+        "--output-device=BlackHole 2ch",
+        "--sample-rate", "48000",
+        "--buffer-size=512",
+        "--route", "3,4"
+    ])
+
+    #expect(options.inputDeviceName == "Audient iD14")
+    #expect(options.outputDeviceName == "BlackHole 2ch")
+    #expect(options.sampleRate == 48_000)
+    #expect(options.bufferFrameSize == 512)
+    #expect(options.outputChannelMap == [3, 4])
+}
+
+@Test func configurationStoreRoundTripsToDisk() throws {
+    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("soundway-tests-\(UUID().uuidString)")
+    let storeURL = tempURL.appendingPathComponent("config.json")
+    let store = SoundwayConfigurationStore(url: storeURL)
+    let configuration = BridgeConfiguration(
+        inputDeviceName: "Interface A",
+        outputDeviceName: "BlackHole 2ch",
+        sampleRate: 44_100,
+        bufferFrameSize: 128,
+        outputChannelMap: [3, 4]
+    )
+
+    defer {
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    try store.save(configuration)
+    let loaded = try #require(try store.load())
+
+    #expect(loaded == configuration)
+}
+
 @Test func currentVersionTracksRepoState() {
-    #expect(SoundwayVersion.current == "0.5.0")
+    #expect(SoundwayVersion.current == "0.6.0")
 }

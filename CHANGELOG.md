@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Added configurable input and output device names from the command line.
+- Added configurable output channel routing so BlackHole can receive the desired input channels.
+- Persisted the last chosen configuration so `status` and the daemon agree on the current setup.
+- Kept the live bridge path intact while making the routing model explicit instead of hard-coded.
+
 ## 0.5.0
 
 - Made the Audient iD14 -> BlackHole bridge actually move audio end to end.

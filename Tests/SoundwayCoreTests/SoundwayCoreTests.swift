@@ -1,3 +1,4 @@
+import AudioToolbox
 import Darwin
 import Foundation
 import Testing
@@ -224,6 +225,67 @@ import Testing
   let telemetry = processor.telemetry()
   #expect(telemetry.capturedFrames == 1_200)
   #expect(telemetry.renderedFrames == 1_024)
+}
+
+@Test func bridgeProcessorCallbackStyleApisAvoidIntermediateBlocks() {
+  let processor = SoundwayBridgeProcessor(
+    settings: .init(
+      sampleRate: 48_000,
+      inputChannelCount: 2,
+      outputChannelCount: 2,
+      maximumFramesPerSlice: 64,
+      outputChannelMap: []
+    ))
+
+  let inputStorage0 = UnsafeMutablePointer<Float>.allocate(capacity: 3)
+  let inputStorage1 = UnsafeMutablePointer<Float>.allocate(capacity: 3)
+  inputStorage0.initialize(from: [1, 2, 3], count: 3)
+  inputStorage1.initialize(from: [10, 20, 30], count: 3)
+
+  let inputBufferList = AudioBufferList.allocate(maximumBuffers: 2)
+  defer {
+    inputBufferList.unsafeMutablePointer.deallocate()
+    inputStorage0.deallocate()
+    inputStorage1.deallocate()
+  }
+  inputBufferList[0] = AudioBuffer(
+    mNumberChannels: 1,
+    mDataByteSize: UInt32(3 * MemoryLayout<Float>.stride),
+    mData: inputStorage0
+  )
+  inputBufferList[1] = AudioBuffer(
+    mNumberChannels: 1,
+    mDataByteSize: UInt32(3 * MemoryLayout<Float>.stride),
+    mData: inputStorage1
+  )
+
+  #expect(processor.capture(input: inputBufferList, frameCount: 3) == noErr)
+
+  let outputStorage0 = UnsafeMutablePointer<Float>.allocate(capacity: 3)
+  let outputStorage1 = UnsafeMutablePointer<Float>.allocate(capacity: 3)
+  outputStorage0.initialize(repeating: 0, count: 3)
+  outputStorage1.initialize(repeating: 0, count: 3)
+
+  let outputBufferList = AudioBufferList.allocate(maximumBuffers: 2)
+  defer {
+    outputBufferList.unsafeMutablePointer.deallocate()
+    outputStorage0.deallocate()
+    outputStorage1.deallocate()
+  }
+  outputBufferList[0] = AudioBuffer(
+    mNumberChannels: 1,
+    mDataByteSize: UInt32(3 * MemoryLayout<Float>.stride),
+    mData: outputStorage0
+  )
+  outputBufferList[1] = AudioBuffer(
+    mNumberChannels: 1,
+    mDataByteSize: UInt32(3 * MemoryLayout<Float>.stride),
+    mData: outputStorage1
+  )
+
+  #expect(processor.renderOutput(frameCount: 3, to: outputBufferList) == noErr)
+  #expect(Array(UnsafeBufferPointer(start: outputStorage0, count: 3)) == [1, 2, 3])
+  #expect(Array(UnsafeBufferPointer(start: outputStorage1, count: 3)) == [10, 20, 30])
 }
 
 // MARK: - Daemon

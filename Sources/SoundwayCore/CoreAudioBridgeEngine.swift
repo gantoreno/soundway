@@ -394,9 +394,7 @@ public final class CoreAudioBridgeEngine {
       return renderStatus
     }
 
-    let inputBlock = makeInputBlock(from: inputBufferList, frameCount: Int(frameCount))
-    processor.capture(input: inputBlock)
-    return noErr
+    return processor.capture(input: inputBufferList, frameCount: Int(frameCount))
   }
 
   private func renderOutput(
@@ -404,61 +402,7 @@ public final class CoreAudioBridgeEngine {
     ioData: UnsafeMutablePointer<AudioBufferList>
   ) -> OSStatus {
     let bufferList = UnsafeMutableAudioBufferListPointer(ioData)
-    let outputBlock = processor.renderOutput(frameCount: Int(frameCount))
-    write(outputBlock, to: bufferList, frameCount: Int(frameCount))
-    return noErr
-  }
-
-  private func makeInputBlock(from bufferList: UnsafeMutableAudioBufferListPointer, frameCount: Int)
-    -> SoundwayAudioBlock
-  {
-    let channelCount = max(1, Int(settings.inputChannelCount))
-    var channels: [[Float]] = []
-    channels.reserveCapacity(channelCount)
-
-    for channel in 0..<channelCount {
-      guard channel < bufferList.count,
-        let source = bufferList[channel].mData?.assumingMemoryBound(to: Float.self)
-      else {
-        channels.append([])
-        continue
-      }
-
-      channels.append(Array(UnsafeBufferPointer(start: source, count: frameCount)))
-    }
-
-    return SoundwayAudioBlock(channels: channels)
-  }
-
-  private func write(
-    _ block: SoundwayAudioBlock, to bufferList: UnsafeMutableAudioBufferListPointer, frameCount: Int
-  ) {
-    if bufferList.count > 0 {
-      for channel in 0..<bufferList.count {
-        guard let destination = bufferList[channel].mData?.assumingMemoryBound(to: Float.self)
-        else {
-          continue
-        }
-
-        for frameOffset in 0..<frameCount {
-          destination[frameOffset] = 0
-        }
-      }
-
-      let destinationChannels = min(bufferList.count, block.channels.count)
-      for channel in 0..<destinationChannels {
-        guard let destination = bufferList[channel].mData?.assumingMemoryBound(to: Float.self)
-        else {
-          continue
-        }
-
-        let source = block.channels[channel]
-        let framesToCopy = min(frameCount, source.count)
-        for frameOffset in 0..<framesToCopy {
-          destination[frameOffset] = source[frameOffset]
-        }
-      }
-    }
+    return processor.renderOutput(frameCount: Int(frameCount), to: bufferList)
   }
 
   private static let inputDeviceCallback: AURenderCallback = {

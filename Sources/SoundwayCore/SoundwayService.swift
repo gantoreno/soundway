@@ -220,6 +220,44 @@ public enum SoundwayServiceControl {
     }
 }
 
+public struct SoundwayServiceController: SoundwayServiceControlling {
+    public init() {}
+
+    public func readStatus() throws -> SoundwayServiceResponse {
+        try SoundwayServiceControl.readStatus()
+    }
+
+    public func stopDaemon() throws -> SoundwayServiceResponse {
+        try SoundwayServiceControl.stopDaemon()
+    }
+
+    public func startBackgroundDaemon(executableURL: URL) throws {
+        try SoundwayServiceControl.startBackgroundDaemon(executableURL: executableURL)
+    }
+
+    public func resolveExecutableURL(commandName: String, environment: [String : String]) -> URL? {
+        SoundwayServiceControl.resolveExecutableURL(commandName: commandName, environment: environment)
+    }
+}
+
+internal struct SoundwayDaemonRequestResult {
+    let response: SoundwayServiceResponse
+    let shouldStop: Bool
+}
+
+internal struct SoundwayDaemonRequestHandler {
+    let statusProvider: () -> SoundwayServiceStatus
+
+    func handle(_ request: SoundwayServiceRequest) -> SoundwayDaemonRequestResult {
+        switch request.action {
+        case .status:
+            return SoundwayDaemonRequestResult(response: .success(status: statusProvider()), shouldStop: false)
+        case .stop:
+            return SoundwayDaemonRequestResult(response: .success(message: "stopping"), shouldStop: true)
+        }
+    }
+}
+
 public final class SoundwayDaemon {
     private let config: BridgeConfiguration
     private let engine: CoreAudioBridgeEngine
@@ -228,13 +266,20 @@ public final class SoundwayDaemon {
     private let outputChannelCount: UInt32
     private var listenerFD: Int32 = -1
 
-    public init(configuration: BridgeConfiguration? = nil, configurationStore: SoundwayConfigurationStore = .init()) throws {
+    public convenience init(configuration: BridgeConfiguration? = nil) throws {
+        try self.init(configuration: configuration, configurationStore: SoundwayConfigurationStore(), deviceDiscovery: AudioDeviceDiscovery())
+    }
+
+    internal init<ConfigurationStore: SoundwayConfigurationLoading, DeviceDiscovery: SoundwayDeviceDiscovering>(
+        configuration: BridgeConfiguration? = nil,
+        configurationStore: ConfigurationStore,
+        deviceDiscovery: DeviceDiscovery
+    ) throws {
         let resolvedConfiguration = try configuration ?? configurationStore.load() ?? .default
         self.config = resolvedConfiguration
-        let discovery = AudioDeviceDiscovery()
-        let endpoints = try discovery.resolveEndpoints(for: resolvedConfiguration)
-        self.inputChannelCount = try discovery.channelCount(for: endpoints.input.id, scope: kAudioObjectPropertyScopeInput)
-        self.outputChannelCount = try discovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
+        let endpoints = try deviceDiscovery.resolveEndpoints(for: resolvedConfiguration)
+        self.inputChannelCount = try deviceDiscovery.channelCount(for: endpoints.input.id, scope: kAudioObjectPropertyScopeInput)
+        self.outputChannelCount = try deviceDiscovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
         self.engine = CoreAudioBridgeEngine(
             endpoints: endpoints,
             settings: .init(
@@ -261,6 +306,29 @@ public final class SoundwayDaemon {
             unlink(endpoint.socketURL.path)
         }
 
+        let requestHandler = SoundwayDaemonRequestHandler(statusProvider: { [engine, config, inputChannelCount, outputChannelCount] in
+            let telemetry = engine.telemetry()
+            return SoundwayServiceStatus(
+                state: engine.currentState == .running ? "running" : "stopped",
+                version: SoundwayVersion.current,
+                inputDevice: config.inputDeviceName,
+                outputDevice: config.outputDeviceName,
+                inputChannels: inputChannelCount,
+                outputChannels: outputChannelCount,
+                outputChannelMap: config.outputChannelMap,
+                sampleRate: config.sampleRate,
+                bufferFrames: config.bufferFrameSize,
+                capturedFrames: telemetry.capturedFrames,
+                renderedFrames: telemetry.renderedFrames,
+                inputPeak: telemetry.inputPeak,
+                outputPeak: telemetry.outputPeak,
+                inputCallbackCount: telemetry.inputCallbackCount,
+                outputCallbackCount: telemetry.outputCallbackCount,
+                lastInputRenderStatus: telemetry.lastInputRenderStatus,
+                lastOutputRenderStatus: telemetry.lastOutputRenderStatus
+            )
+        })
+
         while true {
             let clientFD = accept(listenerFD, nil, nil)
             if clientFD < 0 {
@@ -277,31 +345,9 @@ public final class SoundwayDaemon {
                 continue
             }
 
-            switch request.action {
-            case .status:
-                let telemetry = engine.telemetry()
-                let status = SoundwayServiceStatus(
-                    state: engine.currentState == .running ? "running" : "stopped",
-                    version: SoundwayVersion.current,
-                    inputDevice: config.inputDeviceName,
-                    outputDevice: config.outputDeviceName,
-                    inputChannels: inputChannelCount,
-                    outputChannels: outputChannelCount,
-                    outputChannelMap: config.outputChannelMap,
-                    sampleRate: config.sampleRate,
-                    bufferFrames: config.bufferFrameSize,
-                    capturedFrames: telemetry.capturedFrames,
-                    renderedFrames: telemetry.renderedFrames,
-                    inputPeak: telemetry.inputPeak,
-                    outputPeak: telemetry.outputPeak,
-                    inputCallbackCount: telemetry.inputCallbackCount,
-                    outputCallbackCount: telemetry.outputCallbackCount,
-                    lastInputRenderStatus: telemetry.lastInputRenderStatus,
-                    lastOutputRenderStatus: telemetry.lastOutputRenderStatus
-                )
-                try Self.writeResponse(.success(status: status), fd: clientFD)
-            case .stop:
-                try Self.writeResponse(.success(message: "stopping"), fd: clientFD)
+            let result = requestHandler.handle(request)
+            try Self.writeResponse(result.response, fd: clientFD)
+            if result.shouldStop {
                 return
             }
         }

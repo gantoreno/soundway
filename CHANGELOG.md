@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Extracted the bridge routing and telemetry math into a deterministic pure-Swift processor.
+- Added test seams for configuration loading, device discovery, and daemon request handling.
+- Expanded the unit tests to cover routing, wraparound, silence, telemetry counters, and config precedence.
+- Kept the live Core Audio bridge behavior intact while making the test surface much more reliable.
+
 ## 0.6.0
 
 - Added configurable input and output device names from the command line.

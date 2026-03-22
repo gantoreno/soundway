@@ -9,7 +9,9 @@ struct SoundwayCLI {
         let command = CLICommand(arguments: arguments)
         let optionArguments = Array(arguments.dropFirst())
         let configurationStore = SoundwayConfigurationStore()
+        let configurationResolver = SoundwayConfigurationResolver(store: configurationStore)
         let discovery = AudioDeviceDiscovery()
+        let serviceControl: any SoundwayServiceControlling = SoundwayServiceController()
         let cliOptions: SoundwayCLIOptions
 
         do {
@@ -20,17 +22,7 @@ struct SoundwayCLI {
         }
 
         func resolvedConfiguration() -> BridgeConfiguration {
-            let loadedConfiguration = (try? configurationStore.load()) ?? .default
-            return cliOptions.applying(to: loadedConfiguration)
-        }
-
-        func describeRouting(_ route: [Int]) -> String {
-            guard !route.isEmpty else {
-                return "identity"
-            }
-            return route.enumerated().map { index, source in
-                "\(index + 1)->\(source > 0 ? source : 0)"
-            }.joined(separator: ", ")
+            configurationResolver.resolve(overrides: cliOptions)
         }
 
         switch command {
@@ -47,7 +39,7 @@ struct SoundwayCLI {
             }
         case .status:
             do {
-                let response = try SoundwayServiceControl.readStatus()
+                let response = try serviceControl.readStatus()
                 if let status = response.status {
                     print("soundway is ready to bridge")
                     print("state: \(status.state)")
@@ -56,7 +48,7 @@ struct SoundwayCLI {
                     print("output: \(status.outputDevice)")
                     print("input channels: \(status.inputChannels)")
                     print("output channels: \(status.outputChannels)")
-                    print("channel routing: \(describeRouting(status.outputChannelMap))")
+                    print("channel routing: \(SoundwayStatusFormatting.describeRouting(status.outputChannelMap))")
                     print("sample rate: \(status.sampleRate) Hz")
                     print("buffer size: \(status.bufferFrames) frames")
                     print("captured frames: \(status.capturedFrames)")
@@ -83,7 +75,7 @@ struct SoundwayCLI {
                     let outputChannels = try discovery.channelCount(for: endpoints.output.id, scope: kAudioObjectPropertyScopeOutput)
                     print("input channels: \(inputChannels)")
                     print("output channels: \(outputChannels)")
-                    print("channel routing: \(describeRouting(config.outputChannelMap))")
+                    print("channel routing: \(SoundwayStatusFormatting.describeRouting(config.outputChannelMap))")
                     print("sample rate: \(config.sampleRate) Hz")
                     print("buffer size: \(config.bufferFrameSize) frames")
                     print("captured frames: 0")
@@ -130,10 +122,10 @@ struct SoundwayCLI {
                     try configurationStore.save(configuration)
                 }
                 guard let executableName = CommandLine.arguments.first,
-                      let executableURL = SoundwayServiceControl.resolveExecutableURL(commandName: executableName) else {
+                      let executableURL = serviceControl.resolveExecutableURL(commandName: executableName, environment: ProcessInfo.processInfo.environment) else {
                     throw SoundwayServiceError.daemonLaunchFailed("could not resolve the soundway executable")
                 }
-                try SoundwayServiceControl.startBackgroundDaemon(executableURL: executableURL)
+                try serviceControl.startBackgroundDaemon(executableURL: executableURL)
                 print("soundway bridge started")
             } catch {
                 fputs("soundway: failed to start bridge: \(error)\n", stderr)
@@ -141,7 +133,7 @@ struct SoundwayCLI {
             }
         case .stop:
             do {
-                let response = try SoundwayServiceControl.stopDaemon()
+                let response = try serviceControl.stopDaemon()
                 print(response.message ?? "soundway bridge stopped")
             } catch {
                 fputs("soundway: failed to stop bridge: \(error)\n", stderr)

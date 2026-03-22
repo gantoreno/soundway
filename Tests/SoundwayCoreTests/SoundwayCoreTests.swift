@@ -33,6 +33,11 @@ import Testing
     #expect(AudioDeviceDiscovery.normalizeName("  BlackHole 2CH ") == "blackhole 2ch")
 }
 
+@Test func routingDescriptionFormatsIdentityAndMappedRoutes() {
+    #expect(SoundwayStatusFormatting.describeRouting([]) == "identity")
+    #expect(SoundwayStatusFormatting.describeRouting([3, 4]) == "1->3, 2->4")
+}
+
 @Test func cliOptionsParseDeviceAndRoutingOverrides() throws {
     let options = try SoundwayCLIOptions.parse(arguments: [
         "--input-device", "Audient iD14",
@@ -47,6 +52,183 @@ import Testing
     #expect(options.sampleRate == 48_000)
     #expect(options.bufferFrameSize == 512)
     #expect(options.outputChannelMap == [3, 4])
+}
+
+@Test func configurationResolverHonorsSavedConfigAndOverrides() {
+    let savedConfiguration = BridgeConfiguration(
+        inputDeviceName: "Interface A",
+        outputDeviceName: "BlackHole 2ch",
+        sampleRate: 44_100,
+        bufferFrameSize: 128,
+        outputChannelMap: [5, 6]
+    )
+    let resolver = SoundwayConfigurationResolver(store: MockConfigurationStore(configuration: savedConfiguration))
+
+    let overrideOnly = resolver.resolve(overrides: SoundwayCLIOptions())
+    #expect(overrideOnly == savedConfiguration)
+
+    let overridden = resolver.resolve(overrides: SoundwayCLIOptions(inputDeviceName: "Interface B", outputChannelMap: [1, 2]))
+    #expect(overridden.inputDeviceName == "Interface B")
+    #expect(overridden.outputDeviceName == "BlackHole 2ch")
+    #expect(overridden.sampleRate == 44_100)
+    #expect(overridden.bufferFrameSize == 128)
+    #expect(overridden.outputChannelMap == [1, 2])
+
+    let fallbackResolver = SoundwayConfigurationResolver(store: MockConfigurationStore(configuration: nil))
+    let fallback = fallbackResolver.resolve(overrides: SoundwayCLIOptions())
+    #expect(fallback == BridgeConfiguration.default)
+}
+
+@Test func bridgeProcessorIdentityRoutingCopiesExpectedChannels() {
+    let processor = SoundwayBridgeProcessor(settings: .init(
+        sampleRate: 48_000,
+        inputChannelCount: 2,
+        outputChannelCount: 2,
+        maximumFramesPerSlice: 64,
+        outputChannelMap: []
+    ))
+
+    processor.capture(input: SoundwayAudioBlock(channels: [
+        [1, 2, 3],
+        [10, 20, 30]
+    ]))
+
+    let output = processor.renderOutput(frameCount: 3)
+    #expect(output.channels == [
+        [1, 2, 3],
+        [10, 20, 30]
+    ])
+
+    let telemetry = processor.telemetry()
+    #expect(telemetry.capturedFrames == 3)
+    #expect(telemetry.renderedFrames == 3)
+    #expect(telemetry.inputPeak == 30)
+    #expect(telemetry.outputPeak == 30)
+    #expect(telemetry.inputCallbackCount == 1)
+    #expect(telemetry.outputCallbackCount == 1)
+    #expect(telemetry.lastInputRenderStatus == noErr)
+    #expect(telemetry.lastOutputRenderStatus == noErr)
+}
+
+@Test func bridgeProcessorCustomRoutingMapsTheRightChannels() {
+    let processor = SoundwayBridgeProcessor(settings: .init(
+        sampleRate: 48_000,
+        inputChannelCount: 4,
+        outputChannelCount: 2,
+        maximumFramesPerSlice: 64,
+        outputChannelMap: [3, 4]
+    ))
+
+    processor.capture(input: SoundwayAudioBlock(channels: [
+        [1, 2, 3],
+        [11, 12, 13],
+        [21, 22, 23],
+        [31, 32, 33]
+    ]))
+
+    let output = processor.renderOutput(frameCount: 3)
+    #expect(output.channels == [
+        [21, 22, 23],
+        [31, 32, 33]
+    ])
+}
+
+@Test func bridgeProcessorInvalidRoutingFallsBackToSilence() {
+    let processor = SoundwayBridgeProcessor(settings: .init(
+        sampleRate: 48_000,
+        inputChannelCount: 2,
+        outputChannelCount: 2,
+        maximumFramesPerSlice: 64,
+        outputChannelMap: [99, 0]
+    ))
+
+    processor.capture(input: SoundwayAudioBlock(channels: [
+        [1, 2],
+        [3, 4]
+    ]))
+
+    let output = processor.renderOutput(frameCount: 2)
+    #expect(output.channels == [
+        [0, 0],
+        [0, 0]
+    ])
+}
+
+@Test func bridgeProcessorSilenceStaysSilent() {
+    let processor = SoundwayBridgeProcessor(settings: .init(
+        sampleRate: 48_000,
+        inputChannelCount: 2,
+        outputChannelCount: 2,
+        maximumFramesPerSlice: 64,
+        outputChannelMap: []
+    ))
+
+    let output = processor.renderOutput(frameCount: 4)
+    #expect(output.channels == [
+        [0, 0, 0, 0],
+        [0, 0, 0, 0]
+    ])
+
+    let telemetry = processor.telemetry()
+    #expect(telemetry.capturedFrames == 0)
+    #expect(telemetry.renderedFrames == 0)
+    #expect(telemetry.outputPeak == 0)
+}
+
+@Test func bridgeProcessorWraparoundPreservesOrder() {
+    let processor = SoundwayBridgeProcessor(settings: .init(
+        sampleRate: 48_000,
+        inputChannelCount: 1,
+        outputChannelCount: 1,
+        maximumFramesPerSlice: 64,
+        outputChannelMap: []
+    ))
+
+    processor.capture(input: SoundwayAudioBlock(channels: [
+        Array(0..<600).map(Float.init)
+    ]))
+    processor.capture(input: SoundwayAudioBlock(channels: [
+        Array(600..<1200).map(Float.init)
+    ]))
+
+    let output = processor.renderOutput(frameCount: 1_024)
+    let expected = Array(176..<1_200).map(Float.init)
+    #expect(output.channels == [expected])
+
+    let telemetry = processor.telemetry()
+    #expect(telemetry.capturedFrames == 1_200)
+    #expect(telemetry.renderedFrames == 1_024)
+}
+
+@Test func daemonRequestHandlerBuildsStatusAndStopResponses() {
+    let status = SoundwayServiceStatus(
+        state: "running",
+        version: "0.6.0",
+        inputDevice: "Audient iD14",
+        outputDevice: "BlackHole 2ch",
+        inputChannels: 12,
+        outputChannels: 2,
+        outputChannelMap: [3, 4],
+        sampleRate: 48_000,
+        bufferFrames: 256,
+        capturedFrames: 10,
+        renderedFrames: 10,
+        inputPeak: 0.25,
+        outputPeak: 0.25,
+        inputCallbackCount: 2,
+        outputCallbackCount: 2,
+        lastInputRenderStatus: noErr,
+        lastOutputRenderStatus: noErr
+    )
+    let handler = SoundwayDaemonRequestHandler(statusProvider: { status })
+
+    let statusResult = handler.handle(.init(action: .status))
+    #expect(statusResult.response.status == status)
+    #expect(statusResult.shouldStop == false)
+
+    let stopResult = handler.handle(.init(action: .stop))
+    #expect(stopResult.response.message == "stopping")
+    #expect(stopResult.shouldStop == true)
 }
 
 @Test func configurationStoreRoundTripsToDisk() throws {
@@ -92,5 +274,13 @@ import Testing
 }
 
 @Test func currentVersionTracksRepoState() {
-    #expect(SoundwayVersion.current == "0.6.0")
+    #expect(SoundwayVersion.current == "0.7.0")
+}
+
+private struct MockConfigurationStore: SoundwayConfigurationLoading {
+    let configuration: BridgeConfiguration?
+
+    func load() throws -> BridgeConfiguration? {
+        configuration
+    }
 }

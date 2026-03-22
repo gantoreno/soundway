@@ -19,7 +19,7 @@ public enum AudioDeviceDiscoveryError: Error, Sendable, Equatable {
     case streamConfigurationQueryFailed(AudioDeviceID, OSStatus)
 }
 
-public struct AudioDeviceDiscovery: Sendable {
+public struct AudioDeviceDiscovery: Sendable, SoundwayDeviceDiscovering {
     public init() {}
 
     public func devices() throws -> [AudioDeviceInfo] {

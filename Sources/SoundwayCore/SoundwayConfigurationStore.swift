@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SoundwayConfigurationStore: Sendable, Equatable {
+public struct SoundwayConfigurationStore: Sendable, Equatable, SoundwayConfigurationLoading, SoundwayConfigurationSaving {
     public let url: URL
 
     public init(url: URL = Self.defaultURL) {

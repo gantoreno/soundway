@@ -11,9 +11,14 @@ import Testing
 }
 
 @Test func commandParsingRecognizesKnownCommands() {
+    #expect(CLICommand(arguments: ["version"]) == .version)
+    #expect(CLICommand(arguments: ["--version"]) == .version)
+    #expect(CLICommand(arguments: ["-v"]) == .version)
     #expect(CLICommand(arguments: ["status"]) == .status)
     #expect(CLICommand(arguments: ["devices"]) == .devices)
     #expect(CLICommand(arguments: ["list-devices"]) == .devices)
+    #expect(CLICommand(arguments: ["run"]) == .run)
+    #expect(CLICommand(arguments: ["bridge"]) == .run)
     #expect(CLICommand(arguments: ["start"]) == .start)
     #expect(CLICommand(arguments: ["stop"]) == .stop)
     #expect(CLICommand(arguments: ["nope"]) == .help)
@@ -22,4 +27,8 @@ import Testing
 
 @Test func nameNormalizationIgnoresCaseAndWhitespace() {
     #expect(AudioDeviceDiscovery.normalizeName("  BlackHole 2CH ") == "blackhole 2ch")
+}
+
+@Test func currentVersionTracksRepoState() {
+    #expect(SoundwayVersion.current == "0.3.0")
 }

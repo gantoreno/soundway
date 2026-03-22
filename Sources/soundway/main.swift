@@ -11,6 +11,8 @@ struct SoundwayCLI {
         switch command {
         case .help:
             print(CLIHelp.text)
+        case .version:
+            print(SoundwayVersion.current)
         case .devices:
             do {
                 print(try discovery.listDevicesText())
@@ -29,6 +31,27 @@ struct SoundwayCLI {
                 print("buffer size: \(config.bufferFrameSize) frames")
             } catch {
                 fputs("soundway: bridge endpoints are not fully resolved: \(error)\n", stderr)
+                exit(1)
+            }
+        case .run:
+            do {
+                let config = BridgeConfiguration.default
+                let endpoints = try discovery.resolveEndpoints(for: config)
+                let engine = CoreAudioBridgeEngine(
+                    endpoints: endpoints,
+                    settings: .init(
+                        sampleRate: config.sampleRate,
+                        channelCount: 2,
+                        maximumFramesPerSlice: config.bufferFrameSize
+                    )
+                )
+
+                try engine.start()
+                print(engine.statusText())
+                print("press Ctrl-C to stop")
+                RunLoop.current.run()
+            } catch {
+                fputs("soundway: failed to run bridge: \(error)\n", stderr)
                 exit(1)
             }
         case .start:
